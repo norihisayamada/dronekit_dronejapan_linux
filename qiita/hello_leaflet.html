@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" /><!-- 文字コードはutf-8を使用する -->
+	<title>Hello Leaflet!</title><!-- タイトルバーに表示されるメッセージ -->
+
+    <!-- 以下の2行でLeafletで使用するスタイルシート(.css)とライブラリ(.js)を読み込む -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.5.1/dist/leaflet.css" integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ==" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.5.1/dist/leaflet.js" integrity="sha512-GffPMF3RvMeYyc1LWMHtK8EbPv0iNZ8/oTtHPx9/cc2ILxQ+u905qIwdpULaqDkyBKgOaB57QTMg7ztg8Jm2Og==" crossorigin=""></script>
+</head>
+<body>
+
+<!-- このmapidと名付けられたdiv要素の中に地図を表示する -->
+<div id="mapid" style="width: 800px; height: 600px;"></div>
+
+<!-- <script></script>で囲まれた部分がJavaScript -->
+<script>
+    // mapidと名の付いたdiv要素に地図を作成し，視点は富士山頂付近，ズームレベルは13に設定
+	var mymap = L.map('mapid').setView([35.370772,138.727305], 13);
+
+    // OpenStreetMapのタイルレイヤーを作る
+    var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+        attribution: '© <a href="http://osm.org/copyright">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>',
+        maxZoom: 19
+    });
+    tileLayer.addTo(mymap); // 作成したtileLayerをmymapに追加する
+
+    // マーカーを作り，それに紐付けるポップアップも同時作成
+	L.marker([35.360772,138.727305]).addTo(mymap)       // 富士山頂にマーカーを追加
+		.bindPopup("<b>Hello Leaflet!</b><br/>これはポップアップです").openPopup();   // ポップアップで出すメッセージ
+</script>
+
+</body>
+</html>
+

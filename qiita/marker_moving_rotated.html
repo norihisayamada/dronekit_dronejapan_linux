@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" /><!-- 文字コードはutf-8を使用する -->
+	<title>Moving Marker</title><!-- タイトルバーに表示されるメッセージ -->
+
+    <!-- 以下の2行でLeafletで使用するスタイルシート(.css)とライブラリ(.js)を読み込む -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.5.1/dist/leaflet.css" integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ==" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.5.1/dist/leaflet.js" integrity="sha512-GffPMF3RvMeYyc1LWMHtK8EbPv0iNZ8/oTtHPx9/cc2ILxQ+u905qIwdpULaqDkyBKgOaB57QTMg7ztg8Jm2Og==" crossorigin=""></script>
+
+    <script src="MovingMarker.js" type="text/javascript"></script>
+    <script src="leaflet.rotatedMarker.js" type="text/javascript"></script>
+
+
+    <!-- 以下の2行で，MQTT over Websocketを使うライブラリ(.js)を読み込む -->
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+    <script src="mqttws31.js" type="text/javascript"></script>
+
+    <!-- echo.htmlにあったスタイルシートをコピー -->
+    <style>
+      .box {
+          width: 440px;
+          float: left;
+          margin: 0 20px 0 20px;
+      }
+
+      .box div, .box input {
+          border: 1px solid;
+          -moz-border-radius: 4px;
+          border-radius: 4px;
+          width: 100%;
+          padding: 5px;
+          margin: 3px 0 10px 0;
+      }
+
+      .box div {
+          border-color: grey;
+          height: 300px;
+          overflow: auto;
+      }
+
+      div code {
+          display: block;
+      }
+
+      #second div {
+          font-size: 0.8em;
+      }
+    </style>
+</head>
+
+<body>
+<!-- このmapidと名付けられたdiv要素の中に地図を表示する -->
+<div id="mapid" style="width: 950px; height: 400px;"></div>
+
+<!-- エディットボックスを作る部分．#firstの方は削除した -->
+<div id="second" class="box">
+  <h2>Logs</h2>
+  <div></div>
+</div>
+
+<!-- <script></script>で囲まれた部分がJavaScript -->
+<script>
+    // leafletのスクリプト部分
+
+    // mapidと名の付いたdiv要素に地図を作成し，視点は柏の葉キャンパス駅前付近，ズームレベルは16に設定
+	var mymap = L.map('mapid').setView([35.894087,139.952447], 17);
+
+    // OpenStreetMapのタイルレイヤーを作る
+    var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+        attribution: '© <a href="http://osm.org/copyright">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>',
+        maxZoom: 19
+    });
+    tileLayer.addTo(mymap); // 作成したtileLayerをmymapに追加する
+
+    // マーカーにする画像を読み込む
+    var quad_x_Icon		= L.icon({ iconUrl: 'quad_x-90.png', iconRetinaUrl: 'quad_x-90.png', iconSize: [50, 50], iconAnchor: [25, 25], popupAnchor: [0, -50] });
+
+    // MQTT over WebSocketのスクリプト部分
+    var has_had_focus = false;
+    var pipe = function(el_name, send) {
+        var div  = $(el_name + ' div');
+        var inp  = $(el_name + ' input');
+        var form = $(el_name + ' form');
+
+        var print = function(m, p) {
+            p = (p === undefined) ? '' : JSON.stringify(p);
+            div.append($("<code>").text(m + ' ' + p));
+            div.scrollTop(div.scrollTop() + 10000);
+        };
+        return print;
+    };
+
+    var debug = pipe('#second');
+
+    var wsbroker = location.hostname;  //mqtt websocket enabled broker
+    var wsport = 15675; // port for above
+
+    var client = new Paho.MQTT.Client(wsbroker, wsport, "/ws", "myclientid_" + parseInt(Math.random() * 100, 10));
+
+    client.onConnectionLost = function (responseObject) {
+        debug("CONNECTION LOST - " + responseObject.errorMessage);
+    };
+
+
+    // ドローン情報保存用の連想配列
+    var drones = new Array();   // 緯度経度などのデータを保存する連想配列
+    var markers = new Array();  // マーカーハンドラを保存する連想配列
+
+    // MQTTメッセージSubscribe時の処理
+    client.onMessageArrived = function (message) {
+        debug("RECEIVE ON " + message.destinationName + " PAYLOAD " + message.payloadString);   //debugボックスに表示
+
+        var drone_name = message.destinationName;   // ドローン名はトピック名とする
+
+        var drone_data = JSON.parse( message.payloadString );   // ドローンのデータを連想配列にして格納
+
+        var arm = drone_data.status.Arm;           // ARM/DISARM
+        var mode  = drone_data.status.FlightMode;    // フライトモード
+        var lat  = parseFloat( drone_data.position.latitude );  // 緯度
+        var lon  = parseFloat( drone_data.position.longitude ); // 経度
+        var alt  = parseFloat( drone_data.position.altitude );  // 高度
+        var ang  = parseFloat( drone_data.position.heading );   // 方位
+
+        // ポップアップ用に文字列を作る +=で追加していく
+        var drone_popmessage = drone_name + '<br>';
+        drone_popmessage += mode + ',' + arm + '<br>';
+        drone_popmessage += lon + ',' + lat + '<br>';
+        drone_popmessage += alt + '[m], ' + ang + '[deg]<br>';
+
+       	// drone_nameで登録されている連想配列があるか？ ない->新規にマーカー作成 ある->なにもしない
+	    if( !drones[drone_name] ) {
+
+    		// movingMarkerでマーカーを作成し，rotatedMarkerのrotationオプションをつける
+    		markerHandle = L.Marker.movingMarker([[lat, lon]], [], 
+							{	rotationAngle: 0,   // 回転角度
+								rotationOrigin: 'center center',    // 回転中心
+								title:drone_name,
+								contextmenu: true,
+								contextmenuItems: [{
+									text: drone_name,
+									index: 0
+								}, {
+									separator: true,
+									index: 1
+								}]
+							});
+            markerHandle.bindPopup( drone_popmessage ); // ポップアップメッセージの設定
+            markerHandle.options.icon = quad_x_Icon;    // マーカーアイコンをオリジナル画像に
+            markerHandle.options.autostart = true;	    // MovingMarker機能を自動スタート
+            markerHandle.addTo( mymap );                // 地図へ追加
+
+        	markers[drone_name] = markerHandle;	// マーカー用連想配列に今回作ったマーカー情報を保存
+        } else {
+            markerHandle = markers[drone_name]  // 保存されているマーカー情報をdrone_name(トピック名)をキーにして呼び出す
+		    markerHandle.moveTo([lat,lon], 1000);  // MovingMarkerの移動機能
+		    markerHandle.setRotationAngle(ang);	   // ratatedMarkerの回転機能
+            markerHandle.setPopupContent( drone_popmessage );	// メッセージ更新
+        }
+        drones[drone_name] = drone_data; // ドローンデータ用連想配列の情報を最新のメッセージに更新
+
+    };
+
+    var options = {
+        timeout: 3,
+        onSuccess: function () {
+            debug("CONNECTION SUCCESS");
+            client.subscribe('drone/#', {qos: 1});
+        },
+        onFailure: function (message) {
+            debug("CONNECTION FAILURE - " + message.errorMessage);
+        }
+    };
+
+    if (location.protocol == "https:") {
+        options.useSSL = true;
+    }
+
+    debug("CONNECT TO " + wsbroker + ":" + wsport);
+    client.connect(options);
+</script>
+
+</body>
+</html>
